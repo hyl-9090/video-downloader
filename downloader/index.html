@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频下载器</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --line:#e3e8ef; --text:#1f2a37; --sub:#6b7785;
+    --brand:#3b82f6; --brand2:#2563eb; --ok:#16a34a; --warn:#d97706; --err:#dc2626;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);padding:18px}
+  .wrap{max-width:860px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .tip{color:var(--sub);font-size:13px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  textarea,input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--text)}
+  textarea{resize:vertical;min-height:54px}
+  label{font-size:13px;color:var(--sub);display:block;margin:10px 0 4px}
+  .row{display:flex;gap:10px}
+  button{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;font-weight:600}
+  button:hover{background:var(--brand2)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .ghost{background:#eef2f7;color:var(--text)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--sub);font-weight:600}
+  .tag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:6px;margin-right:4px}
+  .t-video{background:#e0edff;color:#1d4ed8}
+  .t-audio{background:#dcfce7;color:#15803d}
+  .t-both{background:#fef3c7;color:#b45309}
+  .dl{background:var(--ok);padding:6px 12px;font-size:12px}
+  .bar{height:10px;background:#eef2f7;border-radius:6px;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
+  .log{font-size:13px;line-height:1.7;margin-top:8px;color:var(--sub);white-space:pre-wrap}
+  .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+  a.flink{color:var(--brand2);text-decoration:none;font-weight:600}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📥 视频下载器</h1>
+  <div class="tip">基于 yt-dlp 引擎 · 支持 B站/YouTube/抖音等几百个站 · 分离流自动合并(内置合并器, 不依赖 ffmpeg)</div>
+
+  <div class="card">
+    <input id="url" placeholder="粘贴视频链接，如 https://www.bilibili.com/video/BV..." />
+    <label>大会员 cookie（可选，Netscape 格式；普通下载留空）</label>
+    <textarea id="cookie" placeholder="可选：粘入 cookies.txt 内容以解锁高码率/会员内容"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="parseBtn" onclick="parse()">解析</button>
+      <button class="ghost" id="clearBtn" onclick="clearAll()">清空</button>
+    </div>
+  </div>
+
+  <div class="card hide" id="fmtCard">
+    <div id="titleLine" style="font-weight:600;margin-bottom:8px"></div>
+    <div style="overflow:auto">
+      <table id="fmtTable">
+        <thead><tr><th>清晰度</th><th>格式</th><th>码率</th><th>大小</th><th>类型</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card hide" id="dlCard">
+    <div id="dlTitle" style="font-weight:600;margin-bottom:6px">下载中…</div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="log" id="log"></div>
+    <div id="result" class="hide" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+function fmtSize(b){ if(!b) return "-"; b=+b; if(b>1e9) return (b/1e9).toFixed(2)+"GB"; if(b>1e6) return (b/1e6).toFixed(1)+"MB"; return (b/1024).toFixed(0)+"KB"; }
+function fmtTbr(t){ return t? (t/1000).toFixed(1)+"M" : "-"; }
+
+async function parse(){
+  const url=$("#url").value.trim();
+  if(!url){ alert("先粘链接"); return; }
+  $("#parseBtn").disabled=true; $("#parseBtn").textContent="解析中…";
+  $("#fmtCard").classList.add("hide"); $("#dlCard").classList.add("hide");
+  try{
+    const r=await fetch("/parse",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url, cookie:$("#cookie").value})});
+    const j=await r.json();
+    if(j.error){ alert("解析失败: "+j.error); return; }
+    render(j);
+  }catch(e){ alert("请求出错: "+e); }
+  finally{ $("#parseBtn").disabled=false; $("#parseBtn").textContent="解析"; }
+}
+
+function render(j){
+  $("#titleLine").textContent="标题: "+(j.title||"(未知)");
+  const tb=$("#fmtTable tbody"); tb.innerHTML="";
+  (j.formats||[]).forEach(f=>{
+    const isV=f.vcodec!=="none"&&f.vcodec!=="";
+    const isA=f.acodec!=="none"&&f.acodec!=="";
+    let tag= isV&&isA? '<span class="tag t-both">音视频</span>'
+            : isV? '<span class="tag t-video">视频</span>'
+            : '<span class="tag t-audio">音频</span>';
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${f.resolution||"-"}</td><td>${f.ext||"-"}</td><td>${fmtTbr(f.tbr)}</td>`+
+      `<td>${fmtSize(f.filesize)}</td><td>${tag}</td>`+
+      `<td><button class="dl" onclick="download('${encodeURIComponent(j.webpage_url)}','${f.format_id}')">下载</button></td>`;
+    tb.appendChild(tr);
+  });
+  $("#fmtCard").classList.remove("hide");
+}
+
+function download(urlEnc, fmt){
+  const url=decodeURIComponent(urlEnc);
+  $("#dlCard").classList.remove("hide");
+  $("#result").classList.add("hide"); $("#bar").style.width="0"; $("#log").textContent="";
+  $("#dlTitle").textContent="下载中: "+fmt;
+  fetch("/download",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({url, format_id:fmt, cookie:$("#cookie").value})})
+   .then(r=>r.json()).then(j=>{
+     if(j.error){ $("#log").innerHTML='<span class="err">'+j.error+'</span>'; return; }
+     streamProgress(j.task_id);
+   }).catch(e=>{ $("#log").innerHTML='<span class="err">'+e+'</span>'; });
+}
+
+function streamProgress(task){
+  const es=new EventSource("/progress?task="+task);
+  es.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch{ return; }
+    if(m.type==="progress"){
+      const pct=(m.percent||"").replace("%","");
+      if(!isNaN(pct)&&pct!=="") $("#bar").style.width=pct+"%";
+      const line=`[${m.stage}] ${m.percent||""} ${m.filename||""}`;
+      $("#log").textContent += line+"\n";
+    } else if(m.type==="done"){
+      $("#bar").style.width="100%";
+      const note=m.note?` <span class="warn">(${m.note})</span>`:"";
+      $("#result").innerHTML=`<span class="ok">✅ 完成:</span> ${m.file}${note} `+
+        `<a class="flink" href="/file?name=${encodeURIComponent(m.file)}" target="_blank">▶ 打开/下载</a>`;
+      $("#result").classList.remove("hide");
+      es.close();
+    } else if(m.type==="error"){
+      $("#log").innerHTML+='<span class="err">❌ '+m.message+'</span>\n';
+      es.close();
+    }
+  };
+  es.onerror=()=>{ /* 服务器关闭流, 忽略 */ };
+}
+
+function clearAll(){
+  $("#url").value=""; $("#cookie").value="";
+  $("#fmtCard").classList.add("hide"); $("#dlCard").classList.add("hide");
+}
+</script>
+</body>
+</html>

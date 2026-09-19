@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视频下载器</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --card:#ffffff; --line:#e3e8ef; --text:#1f2a37; --sub:#6b7785;
+    --brand:#3b82f6; --brand2:#2563eb; --ok:#16a34a; --warn:#d97706; --err:#dc2626;
+    --sel:#eff6ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);padding:18px}
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .tip{color:var(--sub);font-size:13px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  textarea,input{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:14px;font-family:inherit;background:#fff;color:var(--text)}
+  textarea{resize:vertical;min-height:54px}
+  label{font-size:13px;color:var(--sub);display:block;margin:10px 0 4px}
+  .row{display:flex;gap:10px;align-items:center}
+  button{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;font-weight:600}
+  button:hover{background:var(--brand2)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .ghost{background:#eef2f7;color:var(--text)}
+  .ghost:hover{background:#e2e8f0}
+  /* 视频卡片 */
+  .vhead{display:flex;gap:12px;align-items:flex-start}
+  .vthumb{position:relative;flex:0 0 168px;width:168px;height:95px;border-radius:10px;overflow:hidden;background:#eef2f7}
+  .vthumb img{width:100%;height:100%;object-fit:cover;display:block}
+  .vdur{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px}
+  .vmeta{flex:1;min-width:0}
+  .vtitle{font-size:15px;font-weight:600;line-height:1.45;word-break:break-word}
+  .vsub{color:var(--sub);font-size:12.5px;margin-top:6px}
+  /* 清晰度列表 */
+  .qlist{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .qrow{display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer;border-bottom:1px solid var(--line);background:#fff}
+  .qrow:last-child{border-bottom:0}
+  .qrow:hover{background:#f8fafc}
+  .qrow.sel{background:var(--sel);box-shadow:inset 3px 0 0 var(--brand)}
+  .qdot{flex:0 0 16px;width:16px;height:16px;border-radius:50%;border:2px solid #cbd5e1;position:relative}
+  .qrow.sel .qdot{border-color:var(--brand)}
+  .qrow.sel .qdot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--brand)}
+  .qlabel{font-weight:600;font-size:14px;flex:0 0 auto;min-width:92px}
+  .qbadges{flex:1;display:flex;gap:6px;flex-wrap:wrap}
+  .badge{font-size:11px;padding:2px 7px;border-radius:6px;background:#eef2f7;color:#475569;white-space:nowrap}
+  .badge.v{background:#e0edff;color:#1d4ed8}
+  .badge.a{background:#dcfce7;color:#15803d}
+  .badge.m{background:#fef3c7;color:#b45309}
+  .qsize{flex:0 0 auto;color:var(--sub);font-size:12.5px;font-variant-numeric:tabular-nums}
+  .hint{color:var(--sub);font-size:12.5px}
+  /* 高级原始表 */
+  details.adv{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  details.adv summary{cursor:pointer;color:var(--sub);font-size:12.5px;user-select:none}
+  details.adv[open] summary{margin-bottom:8px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line)}
+  th{color:var(--sub);font-weight:600;white-space:nowrap}
+  td{vertical-align:top}
+  .dl{background:var(--ok);padding:5px 11px;font-size:12px}
+  .dl:hover{background:#15803d}
+  /* 说明文字 */
+  .h2{font-size:15px;font-weight:600;margin:0 0 10px}
+  .note{color:#3f4a58;font-size:13px;line-height:1.85}
+  .note p{margin:0 0 9px}
+  .note ul{margin:0 0 9px;padding-left:20px}
+  .note li{margin:3px 0}
+  .sub{color:var(--sub);font-size:12.5px;margin-top:3px;line-height:1.6}
+  .steps{display:flex;flex-direction:column;gap:11px}
+  .step{display:flex;gap:10px;align-items:flex-start}
+  .step .n{flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:var(--brand);color:#fff;
+           font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .step b{font-size:13.5px}
+  .kbd{background:#eef2f7;border-radius:4px;padding:1px 6px;font-size:12px;color:#334155;white-space:nowrap}
+  .yes{color:var(--ok);font-weight:600;white-space:nowrap}
+  .no{color:var(--err);font-weight:600;white-space:nowrap}
+  .maybe{color:var(--warn);font-weight:600;white-space:nowrap}
+  .flow{background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+        font-size:12.5px;color:#3f4a58;line-height:1.9}
+  .jump{cursor:pointer;color:var(--brand2);font-weight:600;text-decoration:none}
+  /* 进度 */
+  .bar{height:10px;background:#eef2f7;border-radius:6px;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
+  .log{font-size:13px;line-height:1.7;margin-top:8px;color:var(--sub);white-space:pre-wrap;max-height:190px;overflow:auto}
+  .ok{color:var(--ok)} .err{color:var(--err)} .warn{color:var(--warn)}
+  a.flink{color:var(--brand2);text-decoration:none;font-weight:600}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📥 视频下载器</h1>
+  <div class="tip">把视频链接粘进来 → 点「解析」→ 选清晰度 → 下载 <span style="opacity:.6">(界面 v1.5)</span></div>
+
+  <div class="card hide" id="depCard">
+    <div id="depMsg" style="font-size:13px;line-height:1.6"></div>
+  </div>
+
+  <div class="card">
+    <input id="url" placeholder="把视频链接粘到这里（抖音等 App 的整段分享文案也行）" />
+    <div class="flow" style="margin-top:10px">
+      <b>三步搞定：</b><br>
+      ① 在视频页点「分享」→「复制链接」 &nbsp;→&nbsp; ② 粘到上面、点 <span class="kbd">解析</span> &nbsp;→&nbsp; ③ 选清晰度、点 <span class="kbd">⬇ 开始下载</span>
+      <div style="margin-top:6px">各平台具体怎么复制链接、遇到问题怎么办 → <a class="jump" onclick="jumpHelp()">看页面最下面的《使用说明》⤵</a></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button id="parseBtn" onclick="parse()">解析</button>
+      <button class="ghost" id="clearBtn" onclick="clearAll()">清空</button>
+    </div>
+
+    <details class="adv">
+      <summary>高级（一般用不到）：需要登录才能看的内容</summary>
+      <div class="note">
+        <p><b>「cookie」是什么？</b>可以理解成<b>你登录网站后的一张临时通行证</b>，网站靠它认出你是会员。
+          <span class="ok">不知道是什么就完全不用管，留空即可</span> —— 绝大多数视频都不需要它。</p>
+        <p><b>什么情况才需要填：</b></p>
+        <ul>
+          <li>B站想下 <b>1080P 以上 / 大会员专属</b> 画质</li>
+          <li>抖音、小红书、视频号提示「需要登录」才能看</li>
+          <li>想下自己账号里的私密 / 仅粉丝可见内容</li>
+        </ul>
+
+        <div class="h2" style="font-size:14px;margin:16px 0 8px">怎么拿到？两种方法，任选一种</div>
+
+        <p><b>方法一 · 不用装任何东西（推荐，1 分钟搞定）</b></p>
+        <ol>
+          <li>用<b>电脑浏览器</b>打开那个视频网站，并<b>登录</b>自己的账号</li>
+          <li>按键盘 <span class="kbd">F12</span>，打开「开发者工具」，切到 <b>网络 / Network</b> 那一栏</li>
+          <li>按 <span class="kbd">F5</span> 刷新一下页面，在左边随便点一条出现的请求</li>
+          <li>右边找到 <b>请求标头 / Request Headers</b>，里面有一行以 <span class="kbd">Cookie:</span> 开头</li>
+          <li>把 <b>Cookie 后面那一整串</b>（长得像 <span class="kbd">SESSDATA=xxx; bili_jct=yyy; …</span>）复制下来，
+              粘到下面的框里 —— <b>不用管格式，程序会自动转换</b></li>
+        </ol>
+
+        <p><b>方法二 · 装个浏览器扩展（以后省事）</b></p>
+        <ol>
+          <li>给浏览器装「<b>Get cookies.txt LOCALLY</b>」这个扩展（Chrome / Edge 商店里搜得到）</li>
+          <li>登录要下载的那个网站，点扩展图标 → <b>Export / 导出</b></li>
+          <li>用记事本打开导出的 <span class="kbd">cookies.txt</span>，<b>全选复制</b>，粘到下面的框里</li>
+        </ol>
+        <p class="sub">⚠️ 扩展名必须带 <b>LOCALLY</b>，同名的旧版本扩展有过安全问题，别装错。</p>
+
+        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin:10px 0">
+          🔐 <b>安全提醒：</b>这一段内容<b>等于你的登录凭证</b>，拿到它的人可以冒充你登录。
+          <b>千万不要发给别人</b>（包括发到群里）。本程序只在你这台电脑上用一次，下载完立刻删除，不会上传到任何地方。
+        </div>
+
+        <label>cookie 内容（没有就留空，别管它）</label>
+        <textarea id="cookie" placeholder="留空即可。需要时把上面复制到的那一串整段粘进来 —— 两种格式都认，会自动转换"></textarea>
+      </div>
+    </details>
+  </div>
+
+  <div class="card hide" id="errCard">
+    <div id="errMsg"></div>
+  </div>
+
+  <div class="card hide" id="vidCard">
+    <div class="vhead">
+      <div class="vthumb hide" id="vthumbBox"><img id="vthumb" alt=""><span class="vdur" id="vdur"></span></div>
+      <div class="vmeta">
+        <div class="vtitle" id="vtitle"></div>
+        <div class="vsub" id="vsub"></div>
+      </div>
+    </div>
+
+    <div id="vWarn" class="hide" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;
+         padding:9px 11px;font-size:12.5px;color:#9a3412;line-height:1.7;margin-top:10px"></div>
+
+    <div class="qlist" id="qlist"></div>
+
+    <div class="row" style="margin-top:12px">
+      <button id="goBtn" onclick="startDownload()">⬇ 开始下载</button>
+      <span class="hint" id="pickHint"></span>
+    </div>
+
+    <details class="adv">
+      <summary>原始格式表（高级 · 排错用）</summary>
+      <div style="overflow:auto">
+        <table id="fmtTable">
+          <thead><tr><th>清晰度</th><th>格式</th><th>码率</th><th>大小</th><th>类型</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <div class="card hide" id="dlCard">
+    <div id="dlTitle" style="font-weight:600;margin-bottom:6px">下载中…</div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="log" id="log"></div>
+    <div id="result" class="hide" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card" id="helpCard">
+    <div class="h2">📖 使用说明</div>
+    <div class="steps">
+      <div class="step"><span class="n">1</span><div>
+        <b>复制视频链接</b>
+        <div class="sub">打开要下载的视频，点「分享」→「复制链接」。各平台具体位置见下面第二条。</div>
+      </div></div>
+      <div class="step"><span class="n">2</span><div>
+        <b>粘到最上面的输入框，点「解析」</b>
+        <div class="sub">抖音、小红书等 App 复制出来的<b>是一整段带汉字的文案</b>，直接整段粘进去就行，程序会自动把链接挑出来。</div>
+      </div></div>
+      <div class="step"><span class="n">3</span><div>
+        <b>在列表里选清晰度，点「⬇ 开始下载」</b>
+        <div class="sub">列表里每一行就是一个清晰度（1080P / 720P…），后面标了预计文件大小。下完点「▶ 打开/下载」就能看。</div>
+      </div></div>
+    </div>
+
+    <div class="h2" style="margin-top:20px">🎬 各平台怎么复制链接</div>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>平台</th><th>能不能下</th><th>怎么复制链接 / 说明</th></tr></thead>
+        <tbody>
+          <tr><td><b>B站</b></td><td class="yes">✅ 能</td>
+              <td>播放页点「分享」→「复制链接」。也可以<b>只粘 BV 号</b>（如 <span class="kbd">BV1GJ411x7h7</span>）。
+                  番剧、直播回放、合集也能下。多P视频下的是你复制的这一 P。</td></tr>
+          <tr><td><b>抖音</b></td><td class="yes">✅ 能</td>
+              <td>点「分享」→「复制链接」。复制到的是一整段文案，<b>直接整段粘</b>就会自动识别。下的是无水印版。</td></tr>
+          <tr><td><b>小红书</b></td><td class="yes">✅ 能</td>
+              <td>笔记右上「分享」→「复制链接」。部分笔记需要登录凭证（见最上面「高级」）。</td></tr>
+          <tr><td><b>微博</b></td><td class="yes">✅ 能</td>
+              <td>微博正文或视频页点「分享」→「复制链接」。支持 <span class="kbd">weibo.com/数字/…</span>、
+                  <span class="kbd">weibo.com/tv/show/…</span>、<span class="kbd">m.weibo.cn/status/…</span> 几种形式。</td></tr>
+          <tr><td><b>腾讯视频 / 优酷 / 爱奇艺 / 芒果TV</b></td><td class="yes">✅ 能</td>
+              <td>直接复制浏览器地址栏。会员内容需要登录凭证；有版权保护的剧集可能下不了。</td></tr>
+          <tr><td><b>西瓜视频 / AcFun / 搜狐视频</b></td><td class="yes">✅ 能</td>
+              <td>直接复制浏览器地址栏。</td></tr>
+          <tr><td><b>斗鱼 / 虎牙</b></td><td class="yes">✅ 能</td>
+              <td>直播回放、视频页地址直接复制。</td></tr>
+          <tr><td><b>喜马拉雅 / 网易云音乐 / QQ音乐 / 酷我</b></td><td class="maybe">🟡 看情况</td>
+              <td>音频类，程序是认的，但音乐平台大多<b>需要登录或会员</b>才能拿到完整文件，部分只给试听片段。
+                  另外「酷我」要用 <span class="kbd">kuwo.cn/yinyue/数字</span> 这种形式的链接，
+                  现在网页上复制的 <span class="kbd">/play_detail/</span> 形式<b>认不出</b>。以实测结果为准。</td></tr>
+          <tr><td><b>YouTube</b></td><td class="maybe">🟡 看情况</td>
+              <td>直接复制浏览器地址栏。需要这台电脑能正常打开该网站；而且 YouTube 近年加强了限制，
+                  <b>部分视频可能解析不到</b>（会提示「没找到可下载的视频」），那就换一个来源试试。</td></tr>
+          <tr><td><b>微信视频号</b></td><td class="no">❌ 不行</td>
+              <td>微信的视频是加密的、必须登录微信才能看，<b>公开的下载工具都拿不到</b>。
+                  替代办法：请作者把原视频发给你，或者用手机「屏幕录制」录下来。</td></tr>
+          <tr><td><b>快手</b></td><td class="no">❌ 不行</td>
+              <td>下载引擎（yt-dlp）还没有支持快手。可以看作者是否允许「保存到相册」，或用手机录屏。</td></tr>
+          <tr><td><b>微视 / 咪咕视频 / 皮皮虾</b></td><td class="no">❌ 不行</td>
+              <td>下载引擎还没有支持这几个平台。</td></tr>
+          <tr><td><b>其它网站</b></td><td class="yes">✅ 多数能</td>
+              <td>支持 1700 多个网站。直接复制浏览器地址栏试一下，解析不了就是不行。</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="sub" style="margin-top:8px">
+      上面「能不能下」是<b>实际测过</b>的结果，不是估计的。遇到不支持的平台，页面会直接告诉你原因和替代办法，不会只丢一串英文报错。
+    </div>
+
+    <details class="adv">
+      <summary>❓ 常见问题（点开看）</summary>
+      <div class="note">
+        <p><b>Q：点了「解析」没反应 / 提示解析失败？</b><br>
+          A：① 重新复制一次链接，确认复制完整；② 确认这台电脑能正常打开那个网站；③ 换一个视频试试——
+          有些内容网站本身就不允许下载（付费、有版权限制等）。</p>
+        <p><b>Q：列表里的「需合并」是什么意思？</b><br>
+          A：清晰度越高，网站在服务器上是把「画面」和「声音」<b>分开存的</b>。程序下载后会自动拼成一个完整视频，
+          <b>多等十几秒是正常的</b>，不是卡住了。</p>
+        <p><b>Q：第一次打开特别慢 / 一直显示「正在准备」？</b><br>
+          A：第一次运行要下载一个约 50MB 的合并组件（页面顶部有进度提示）。<b>只下载这一次</b>，以后打开就快了。</p>
+        <p><b>Q：下载好的文件在哪里？</b><br>
+          A：双击运行的这个版本，文件存在「下载」文件夹里名为 <b>视频下载器</b> 的文件夹中；
+          下载完成后，页面上「▶ 打开/下载」也可以直接点开。</p>
+        <p><b>Q：为什么最高只有 480P / 360P？</b><br>
+          A：网站没有给更高码率就是没有（未登录时 B站 常常只给到 480P）。
+          想拿更高画质，需要登录凭证，见最上面「高级」那一栏。</p>
+        <p><b>Q：我按方法一填了 cookie，可还是只有 480P？</b><br>
+          A：按顺序检查：① 你登录的那个账号<b>本身是不是大会员</b>（普通账号登录也拿不到大会员画质）；
+          ② cookie 可能<b>过期了</b>——重新按方法一复制一次；③ 复制时确认<b>完整复制到最后</b>，别只复制一半。</p>
+        <p><b>Q：填了 cookie 之后，画质反而变低了？</b><br>
+          A：说明这串 cookie <b>无效或已经过期</b>——网站认不出你是会员，就按「未登录」处理了。
+          把框<b>清空</b>再解析一次通常就恢复；要填就填<b>刚复制下来、最新</b>的那一串。</p>
+        <p><b>Q：填了 cookie 会不会有风险？</b><br>
+          A：cookie 相当于你的登录凭证，<b>所以千万别发给别人</b>。就本程序而言：它只在你自己的电脑上运行，
+          这段内容只在下载时临时用一下、<b>用完立刻删除</b>，不会上传、也不会保存下来。</p>
+        <p><b>Q：能一次下载整个合集 / 播放列表吗？</b><br>
+          A：目前一次下载一个视频。多P视频下载的是你复制链接时的那一个 P。</p>
+        <p><b>Q：下载会记录我看了什么吗？</b><br>
+          A：不会。这是在本机运行的小程序，<b>只做「下载」这一件事</b>，
+          cookie（如果填了）也只用于当前这一次下载，用完即删，不会上传到任何地方。</p>
+      </div>
+    </details>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let CUR = null, PICK = 0, DEP_TIMER = null;
+
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtSize(b, approx){
+  if(!b) return "-";
+  b = +b;
+  let s;
+  if(b>1e9) s=(b/1e9).toFixed(2)+"GB";
+  else if(b>1e6) s=(b/1e6).toFixed(1)+"MB";
+  else s=(b/1024).toFixed(0)+"KB";
+  return (approx?"≈":"")+s;
+}
+function fmtTbr(t){ return t? (t/1000).toFixed(1)+"M" : "-"; }
+function fmtDur(s){
+  if(!s) return "";
+  s = Math.round(+s);
+  const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  const p=n=>String(n).padStart(2,"0");
+  return h ? (h+":"+p(m)+":"+p(x)) : (m+":"+p(x));
+}
+
+async function parse(){
+  const url=$("#url").value.trim();
+  if(!url){ alert("先把视频链接粘到上面的框里。"); return; }
+  $("#parseBtn").disabled=true; $("#parseBtn").textContent="解析中…";
+  $("#vidCard").classList.add("hide"); $("#dlCard").classList.add("hide"); $("#errCard").classList.add("hide");
+  try{
+    const r=await fetch("/parse",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({url, cookie:$("#cookie").value})});
+    const j=await r.json();
+    if(j.error){ showErr(j.error, j.friendly); return; }
+    render(j);
+  }catch(e){ showErr("请求出错: "+e); }
+  finally{ $("#parseBtn").disabled=false; $("#parseBtn").textContent="解析"; }
+}
+
+/* 把 yt-dlp 的英文报错翻译成"人话", 原始报错折在下面给懂电脑的人看 */
+function showErr(raw, friendly){
+  const t = String(raw||"");
+  // 平台本身就不支持的(后端已判定): 直接展示人话, 不用再翻译
+  if(friendly){
+    $("#errMsg").innerHTML =
+      '<div class="h2" style="margin-bottom:8px">🙅 这个平台暂时下不了</div>'+
+      '<div class="note">'+esc(t)+'</div>';
+    $("#errCard").classList.remove("hide");
+    return;
+  }
+  let tip = "解析失败。";
+  if(/Unsupported URL|not a valid URL|Invalid URL/i.test(t))
+    tip = "这个链接不支持 —— 多半是链接没复制完整，或者这个网站不提供下载（快手、微信视频号目前确实下不了）。";
+  else if(/timed out|timeout|Unable to download|Connection|SSL|resolve|getaddrinfo/i.test(t))
+    tip = "连不上那个网站 —— 先确认这台电脑能正常打开该网站（部分网站需要能访问外网）。";
+  else if(/Sign in|login|Login|members|premium|VIP|需要登录|login required/i.test(t))
+    tip = "这个内容需要登录才能看 —— 看最上面「高级」里填 cookie 的说明。";
+  else if(/404|not found|Deleted|已删除|does not exist/i.test(t))
+    tip = "视频不存在或已被删除，换个链接试试。";
+  $("#errMsg").innerHTML =
+    '<div class="h2" style="margin-bottom:6px">⚠️ '+esc(tip)+'</div>'+
+    '<div class="sub">可以试试：① 重新复制一次链接；② 换一个视频；③ 看页面最下面的《使用说明》。</div>'+
+    '<details class="adv"><summary>技术详情（给懂电脑的人看）</summary>'+
+    '<div class="note" style="word-break:break-all">'+esc(t)+'</div></details>';
+  $("#errCard").classList.remove("hide");
+}
+
+function jumpHelp(){
+  const el = document.getElementById("helpCard");
+  if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+function render(j){
+  CUR = j; PICK = 0;
+
+  $("#vtitle").textContent = j.title || "(未知标题)";
+  const bits=[];
+  if(j.uploader) bits.push(j.uploader);
+  if(j.duration) bits.push("时长 "+fmtDur(j.duration));
+  bits.push(((j.choices||[]).length ? (j.choices.length+" 个清晰度可选") : "未识别到可下载格式"));
+  $("#vsub").textContent = bits.join("  ·  ");
+
+  if(j.thumbnail){
+    const img=$("#vthumb");
+    img.onerror = () => $("#vthumbBox").classList.add("hide");
+    img.src = j.thumbnail;
+    $("#vthumbBox").classList.remove("hide");
+  } else $("#vthumbBox").classList.add("hide");
+  $("#vdur").textContent = fmtDur(j.duration);
+
+  const warns = [];
+  if(j.warn) warns.push(j.warn);
+  if(!(j.formats||[]).length)
+    warns.push("这个链接打开成功了，但没找到可下载的视频。可能这个视频需要登录才能看，或者网站限制了下载 —— 可以试试填 cookie，或者换一个链接。");
+  if(warns.length){
+    $("#vWarn").innerHTML = warns.map(w => "⚠️ " + esc(w)).join("<br><br>");
+    $("#vWarn").classList.remove("hide");
+  } else {
+    $("#vWarn").classList.add("hide");
+  }
+
+  const list=$("#qlist"); list.innerHTML="";
+  (j.choices||[]).forEach((c,i)=>{
+    const d=document.createElement("div");
+    d.className = "qrow" + (i===0 ? " sel" : "");
+    const vc = c.vcodec ? `<span class="badge v">${esc(c.vcodec)}</span>` : "";
+    const ac = c.acodec ? `<span class="badge a">${esc(c.acodec)}</span>` : "";
+    const mg = c.merge ? `<span class="badge m" title="下载后自动把画面和声音拼起来（首次会自动准备合并工具）">需合并</span>` : "";
+    d.innerHTML = `<span class="qdot"></span><span class="qlabel">${esc(c.label)}</span>`+
+      `<span class="qbadges">${vc}${ac}${mg}</span>`+
+      `<span class="qsize">${fmtSize(c.filesize, c.size_approx)}</span>`;
+    d.onclick = () => pick(i);
+    list.appendChild(d);
+  });
+  if(!(j.choices||[]).length){
+    list.innerHTML = '<div class="qrow" style="cursor:default;color:var(--sub)">没有识别到可用格式，展开下面的原始表试试</div>';
+  }
+
+  const tb=$("#fmtTable tbody"); tb.innerHTML="";
+  (j.formats||[]).forEach(f=>{
+    const isV = f.vcodec!=="none" && f.vcodec!=="";
+    const isA = f.acodec!=="none" && f.acodec!=="";
+    const tag = (isV&&isA) ? '<span class="badge m">音视频</span>'
+              : isV ? '<span class="badge v">视频</span>' : '<span class="badge a">音频</span>';
+    const tr=document.createElement("tr");
+    tr.innerHTML = `<td>${esc(f.resolution||"-")}</td><td>${esc(f.ext||"-")}</td><td>${fmtTbr(f.tbr)}</td>`+
+      `<td>${fmtSize(f.filesize)}</td><td>${tag}</td>`+
+      `<td><button class="dl" onclick="downloadRaw('${esc(f.format_id)}')">下载</button></td>`;
+    tb.appendChild(tr);
+  });
+
+  updateHint();
+  $("#vidCard").classList.remove("hide");
+}
+
+function pick(i){
+  PICK = i;
+  document.querySelectorAll("#qlist .qrow").forEach((el,k)=>el.classList.toggle("sel", k===i));
+  updateHint();
+}
+
+function updateHint(){
+  const c = ((CUR && CUR.choices) || [])[PICK];
+  $("#pickHint").textContent = c ? ("已选： " + c.label + "   " + fmtSize(c.filesize, c.size_approx)) : "";
+}
+
+function startDownload(){
+  const c = ((CUR && CUR.choices) || [])[PICK];
+  if(!c){ alert("先选一个清晰度"); return; }
+  doDownload(CUR.webpage_url, c.fmt, c.vfmt, c.afmt, c.merge, c.label, CUR.title);
+}
+
+function downloadRaw(fmtId){
+  if(!CUR) return;
+  doDownload(CUR.webpage_url, fmtId, null, null, null, "原始格式 "+fmtId, CUR.title);
+}
+
+function doDownload(url, fmt, vfmt, afmt, merge, label, title){
+  $("#dlCard").classList.remove("hide");
+  $("#result").classList.add("hide"); $("#bar").style.width="0"; $("#log").textContent="";
+  $("#dlTitle").textContent = "下载中： " + (label || fmt);
+  fetch("/download",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({url, format_id:fmt, vfmt, afmt, merge, label, title, cookie:$("#cookie").value})})
+   .then(r=>r.json()).then(j=>{
+     if(j.error){ $("#log").innerHTML='<span class="err">'+esc(j.error)+'</span>'; return; }
+     streamProgress(j.task_id);
+   }).catch(e=>{ $("#log").innerHTML='<span class="err">'+esc(e)+'</span>'; });
+}
+
+function streamProgress(task){
+  const es=new EventSource("/progress?task="+task);
+  es.onmessage=ev=>{
+    let m; try{ m=JSON.parse(ev.data); }catch(err){ return; }
+    if(m.type==="progress"){
+      const pct=(m.percent||"").replace("%","");
+      if(!isNaN(pct) && pct!=="") $("#bar").style.width=pct+"%";
+      $("#log").textContent += `[${m.stage}] ${m.percent||""} ${m.filename||""}\n`;
+    } else if(m.type==="done"){
+      $("#bar").style.width="100%";
+      const note = m.note ? ` <span class="warn">(${m.note})</span>` : "";
+      $("#result").innerHTML = `<span class="ok">✅ 完成:</span> ${esc(m.file)}${note} `+
+        `<a class="flink" href="/file?name=${encodeURIComponent(m.file)}" target="_blank">▶ 打开/下载</a>`;
+      $("#result").classList.remove("hide");
+      es.close();
+    } else if(m.type==="error"){
+      $("#log").innerHTML += '<span class="err">❌ 下载失败。</span> '+
+        '<span style="color:var(--sub)">可以先重试一次；如果一直失败，多半是这个视频被网站限制了。</span>\n'+
+        '<span style="color:var(--sub);font-size:12px;word-break:break-all">技术详情: '+esc(m.message)+'</span>\n';
+      es.close();
+    }
+  };
+  es.onerror=()=>{ /* 服务器关闭流, 忽略 */ };
+}
+
+function clearAll(){
+  $("#url").value=""; $("#cookie").value="";
+  $("#vidCard").classList.add("hide"); $("#dlCard").classList.add("hide");
+  $("#errCard").classList.add("hide");
+  CUR=null; PICK=0;
+}
+
+/* 运行环境状态: 首次运行要下合并组件(ffmpeg), 这里明示进度, 免得页面像卡死 */
+async function pollDeps(){
+  try{
+    const r = await fetch("/status");
+    const j = await r.json();
+    if(j.ready){
+      if(DEP_TIMER){ clearInterval(DEP_TIMER); DEP_TIMER=null; }
+      const n = (j.notes||[]).filter(s => /ffmpeg|yt-dlp/.test(s));
+      if(j.error){
+        $("#depMsg").innerHTML = '<span class="err">⚠️ 运行环境准备失败：'+esc(j.error)+'</span>';
+        $("#depCard").classList.remove("hide");
+      } else if(n.length){
+        $("#depMsg").innerHTML = '<span class="ok">✅ 运行环境就绪</span> <span style="color:var(--sub)">'+n.map(esc).join(' · ')+'</span>';
+        $("#depCard").classList.remove("hide");
+        setTimeout(()=>$("#depCard").classList.add("hide"), 6000);
+      } else {
+        $("#depCard").classList.add("hide");
+      }
+    } else {
+      $("#depCard").classList.remove("hide");
+      $("#depMsg").innerHTML = '<span class="warn">⏳ '+esc(j.phase||"正在准备运行环境…")+'</span>'+
+        '<div style="color:var(--sub);font-size:12px;margin-top:4px">首次运行要下载合并组件（约 50MB），只这一次。现在也可以先粘链接解析。</div>';
+    }
+  }catch(e){ /* 服务还没起来, 下次再试 */ }
+}
+pollDeps();
+DEP_TIMER = setInterval(pollDeps, 1500);
+</script>
+</body>
+</html>
