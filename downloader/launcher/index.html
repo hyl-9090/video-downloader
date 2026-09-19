@@ -91,7 +91,7 @@
 <body>
 <div class="wrap">
   <h1>📥 视频下载器</h1>
-  <div class="tip">把视频链接粘进来 → 点「解析」→ 选清晰度 → 下载 <span style="opacity:.6">(界面 v1.5)</span></div>
+  <div class="tip">把视频链接粘进来 → 点「解析」→ 选清晰度 → 下载 <span style="opacity:.6">(界面 v1.6)</span></div>
 
   <div class="card hide" id="depCard">
     <div id="depMsg" style="font-size:13px;line-height:1.6"></div>
@@ -460,6 +460,8 @@ function doDownload(url, fmt, vfmt, afmt, merge, label, title){
 
 function streamProgress(task){
   const es=new EventSource("/progress?task="+task);
+  let finished=false;   // 终态后服务端关流也会触发 onerror, 得区分开, 否则会误报
+  const stop=()=>{ finished=true; es.close(); };
   es.onmessage=ev=>{
     let m; try{ m=JSON.parse(ev.data); }catch(err){ return; }
     if(m.type==="progress"){
@@ -472,15 +474,21 @@ function streamProgress(task){
       $("#result").innerHTML = `<span class="ok">✅ 完成:</span> ${esc(m.file)}${note} `+
         `<a class="flink" href="/file?name=${encodeURIComponent(m.file)}" target="_blank">▶ 打开/下载</a>`;
       $("#result").classList.remove("hide");
-      es.close();
+      stop();
     } else if(m.type==="error"){
       $("#log").innerHTML += '<span class="err">❌ 下载失败。</span> '+
         '<span style="color:var(--sub)">可以先重试一次；如果一直失败，多半是这个视频被网站限制了。</span>\n'+
         '<span style="color:var(--sub);font-size:12px;word-break:break-all">技术详情: '+esc(m.message)+'</span>\n';
-      es.close();
+      stop();
     }
   };
-  es.onerror=()=>{ /* 服务器关闭流, 忽略 */ };
+  es.onerror=()=>{
+    if(finished) return;          // 正常收尾, 不用提示
+    finished=true;
+    $("#bar").style.width="0%";
+    $("#log").innerHTML += '<span class="err">⚠️ 和后台的连接断了。</span> '+
+      '<span style="color:var(--sub)">刷新页面后重新点一次「开始下载」就行（已经下好的文件还在「下载」文件夹里）。</span>\n';
+  };
 }
 
 function clearAll(){

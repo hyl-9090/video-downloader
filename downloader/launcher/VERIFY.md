@@ -15,16 +15,21 @@ VM 侧通常是 `F:\2026 英语歌曲大赛MV\downloader\launcher\` 或 `\\HwFs\
 请**先把 F 盘那份重新拷过来覆盖**，再开始。拷完先确认版本号：
 
 ```
-findstr /C:"界面 v" index.html
+powershell -c "Select-String -Path index.html -Pattern '界面 v'"
 ```
 
-**期望看到 `界面 v1.5`**。不是 v1.5 就先别往下走，说明拷的是旧版。
+> ⚠️ **别用 `findstr /C:"界面 v" index.html`**：中文 Windows 控制台是 GBK，而 `index.html` 存的是 UTF-8，
+> findstr 匹配中文会**查不到**（上一轮验收实测踩到）。用上面的 `Select-String`，或直接打开文件搜"界面 v"。
 
-同时确认 `launch.py` 里有这几个新函数（存在即为对）：
-`normalize_url`、`unsupported_hint`、`build_choices`、`normalize_cookie`、`find_ffmpeg`、`_prep_deps`
+**期望看到 `界面 v1.6`**。不是 v1.6 就先别往下走，说明拷的是旧版。
+（v1.6 = 修了单文件模式下载必然失败、进度流静默卡死等问题，逐条见 §3.5 与 §2.5。）
+
+同时确认 `launch.py` 里有这几个函数与参数（存在即为对）：
+`normalize_url`、`unsupported_hint`、`build_choices`、`normalize_cookie`、`find_ffmpeg`、`_prep_deps`，
+以及 **`--no-playlist`**（v1.6 修的关键字，注意不是 `--noplaylist`）：
 
 ```
-findstr /C:"def normalize_url" /C:"def unsupported_hint" /C:"def build_choices" /C:"def normalize_cookie" /C:"def find_ffmpeg" /C:"def _prep_deps" launch.py
+powershell -c "Select-String -Path launch.py -Pattern 'def normalize_url','def unsupported_hint','def build_choices','def normalize_cookie','def find_ffmpeg','def _prep_deps','no-playlist'"
 ```
 
 ---
@@ -35,7 +40,7 @@ findstr /C:"def normalize_url" /C:"def unsupported_hint" /C:"def build_choices" 
 |---|---|---|---|
 | 1.1 | Python 语法 | `python -m py_compile launch.py` | 无输出、无报错；生成 `__pycache__` 属正常 |
 | 1.2 | 界面 JS 语法 | 见下方说明 | 无报错 |
-| 1.3 | 界面体积 | `dir index.html` | 约 **26 KB**（旧版约 7 KB / 12 KB，可辅助判断版本） |
+| 1.3 | 界面体积 | `dir index.html` | 约 **29 KB**（29,848 字节；v1.5 是 29,365，旧版约 7 KB / 12 KB） |
 
 1.2 的做法：把 `index.html` 里 `<script>…</script>` 之间的内容抽出来存成 `t.js`，跑 `node --check t.js`。
 （VM 里没装 node 就**跳过**，并在报告里注明"未验证"——**不要**为了这项去装东西。）
@@ -48,7 +53,9 @@ findstr /C:"def normalize_url" /C:"def unsupported_hint" /C:"def build_choices" 
 python launch.py 8932
 ```
 
-（端口随便挑一个没被占用的；用 `--console` 方式运行能看到日志更好。）
+（端口随便挑一个没被占用的；直接在终端里跑就能看到日志——v1.6 起强制行缓冲，
+不会再出现"跑了一整场一句日志都没有"的假象。想指定端口就写 `python launch.py 8932`，
+**非数字参数会被忽略**，所以 `--console` 之类也不会再把程序搞崩。）
 
 | # | 检查 | 命令 | 期望 |
 |---|---|---|---|
@@ -56,10 +63,13 @@ python launch.py 8932
 | 2.2 | 依赖状态 | `curl http://127.0.0.1:8932/status` | 最终 `"ready": true`，`notes` 里有 yt-dlp 与 ffmpeg 两条 |
 | 2.3 | 健康检查 | `curl http://127.0.0.1:8932/health` | `{"ok": true, ...}` |
 | 2.4 | 首页 | 浏览器打开 `http://127.0.0.1:8932/` | 能看到：输入框、三步说明、底部《使用说明》表格 |
+| 2.5 | 进度流查不存在的任务（v1.6 修的静默卡死点） | `curl -N "http://127.0.0.1:8932/progress?task=999"` | 立刻返回一条 `data: {"type":"error", ...}`，消息里有"任务不存在或已结束"。**不应**返回 `event: error`（前端收不到那种具名事件，界面会一直干等） |
 
-> **首次运行会下载约 50MB 的 ffmpeg**（页面顶部会有 ⏳ 提示条）。
+> **首次运行会下载约 106MB 的 ffmpeg**（页面顶部会有 ⏳ 提示条）。
 > 这是**预期行为**，不是卡死。它存在 `%LOCALAPPDATA%\VideoDownloader\bin\ffmpeg.exe`，
 > **只会下载这一次**——可以关掉再开一次，确认第二次不再下载（这就是 v1.2 修的那个 bug）。
+> 如果这台机器 PATH 里已经有 ffmpeg（`where ffmpeg` 有结果），这条下载路径**根本不会触发**，
+> `notes` 会直接写 `ffmpeg: 系统 PATH`，此时"首次下载"这项记为**未触发/未验证**即可，不算失败。
 
 ---
 
@@ -115,28 +125,66 @@ VM 是 Windows，会走 **ffmpeg 合并**路径（不是鸿蒙的内置合并器
 - 进度依次出现 `[下载视频] …` → `[下载音频] …` → `[合并]`
 - 出现 `✅ 完成: xxx.mp4`
 - 文件是**能播放的完整视频**（有画面**也有声音**）
-- 文件里应存到「下载」文件夹下的 **视频下载器** 子文件夹
+- 保存位置看**你跑的是哪种**：双击 **exe** → `下载\视频下载器\`；**源码**方式跑 → `launcher\downloads\`
 
 请报告**文件大小**和**能否正常播放（含声音）**。
+
+---
+
+## 3.6 单文件模式（v1.6 修的重点，务必单独验一遍）
+
+**背景**：v1.5 之前，程序在"**没装 `yt_dlp` 模块**、靠自动下载 `yt-dlp.exe` 单文件"的环境下，
+下载会 **100% 失败**——因为命令行参数写成了 `--noplaylist`，而 yt-dlp 2026 只认 `--no-playlist`，
+程序直接以 `returncode=2` 退出，界面只显示一句"下载失败"，看不到原因。v1.6 已修，并且会把
+yt-dlp 的最后几行 stderr 一起带进错误信息。
+
+**3.6.1 先做参数存在性对照（10 秒，纯命令行，不联网下视频）**
+
+```
+yt-dlp.exe --no-playlist --version     → 应正常打印版本号
+yt-dlp.exe --noplaylist --version      → 应报 "no such option: --noplaylist"
+```
+第一条能过、第二条报错，就证明 v1.6 的修法是对的。
+
+**3.6.2 真下载（推荐做；不方便可跳过并注明"未验证"）**
+
+让它走单文件模式最简单的方式，是**临时把 yt_dlp 模块移开**（例如 `pip uninstall yt-dlp`，
+或者把 `site-packages\yt_dlp` 改名成 `yt_dlp.bak`），再跑一次 3.5 的 360P 下载。
+
+**期望**：同样能下完并合并出可播放的 mp4。
+**若失败**：错误信息里应能看到 yt-dlp 的**原始原因**（不再是光秃秃的 `returncode=2`）——
+这也是 v1.6 的改动之一，请把原始报错贴进报告。
+
+⚠️ **测完请把 yt_dlp 模块恢复原状**，并在报告里说明你动过什么、恢复成什么样。
 
 ---
 
 ## 4. 打包验证（可选，但建议做）
 
 ```
-pip install pyinstaller yt-dlp
+pip install -U pyinstaller yt-dlp
 python build_win.py
 ```
 
-⚠️ **前提**：这台 VM 里的 Python 必须是 **x86-64（amd64）版**。
-如果装的是 ARM64 原生版，PyInstaller 会因**缺 arm64 引导器**而打包失败——这是已知坑，不是代码问题。
+⚠️ **前提：必须用 x86-64（amd64）版 Python 打包。**
+注意这里跟旧文档的说法**已经不一样了**（上一轮验收实测更新）：
+- 旧说法"ARM64 版 Python 会因为缺 arm64 引导器而**打包失败**"→ **已过期**。
+  PyInstaller 6.22+ 自带了 arm64 引导器，**打包会成功**，但产物是 **ARM64 exe（`Machine = 0xAA64`）**，
+  在班级的 x64 电脑上双击会报"不是有效的 Win32 应用程序"。**静默产出废 exe 比直接报错更危险**。
+- v1.6 起 `build_win.py` **自带架构门禁**：一开始就检查 Python 架构，是 ARM64 会**直接停下并告诉你怎么装对版本**；
+  打完还会读一次 PE 头自检，不是 `0x8664` 就报错退出（exit 3）。所以真跑错版本，会在日志里看到明确的 ✗ 提示。
 
-**期望**：产物 `dist\视频下载器.exe`，**约 17.6 MB**（17,589,901 字节上下）。
+**期望**：
+- 日志里有 `· Python 架构: AMD64 → 可用于 x64 打包`
+- 日志里有 `· 内置 yt-dlp 版本: 2026.xx.xx`（**建议先 `pip install -U yt-dlp` 再打包**：
+  上一轮验收发现，用旧版 yt-dlp 打出来的 exe 对同一条 B站链接只给 **3 档**清晰度，
+  而当前源码给 **5 档**——同一工具两个版本行为不一致，会被误判成缺陷）
+- 产物大小取决于同目录有没有放 `ffmpeg.exe`：
+  - 放了（和已交付的那份一样）：**约 44 MB（46,114,396 字节）**
+  - 没放：**约 16 MB**（薄，首次运行需联网下 ffmpeg）
+- 产物自检那行是 `✅ 可以发给 x64 电脑`，且 `PE Machine = 0x8664`
 
-打完后**验一下 exe 是真 x64**（随便用 python 读 PE 头也行）：
-`Machine = 0x8664`。班级里的 x64 电脑才跑得起来。
-
-然后双击 exe 跑一次，确认：浏览器自动打开 → 首次会下 ffmpeg（页面有提示）→ **关掉再开，不再重下**。
+然后双击 exe 跑一次，确认：浏览器自动打开 → 首次会下 ffmpeg（页面有提示；若已内置则跳过）→ **关掉再开，不再重下**。
 
 ---
 
@@ -145,15 +193,16 @@ python build_win.py
 请按下面格式输出，**每项都要贴原始输出**，不要只说"通过"：
 
 ```
-【版本确认】  界面版本 = ? / 新函数是否齐全 = ?
+【版本确认】  界面版本 = ? / 新函数是否齐全 = ? / 有 --no-playlist 吗 = ?
 【1 静态】    1.1 …  1.2 …  1.3 …
-【2 接口】    2.1 …  2.2 …  2.3 …  2.4 …
+【2 接口】    2.1 …  2.2 …  2.3 …  2.4 …  2.5 (progress 不存在任务返回什么)
 【3 功能】    3.1 清晰度档数=? 档位=?  
               3.2 是否识别成功=?
               3.3 视频号返回=? 快手返回=?
               3.4 对照: 不带cookie=?档 / 带伪造cookie=?档
-              3.5 文件名=? 大小=? 能播放吗(有声音吗)=?
-【4 打包】    exe 大小=? / Machine=?
+              3.5 文件名=? 大小=? 能播放吗(有声音吗)=? 存到哪个目录=?
+              3.6 参数对照: --no-playlist=? / --noplaylist=? / 单文件模式真下载=?
+【4 打包】    Python 架构=? / 内置 yt-dlp 版本=? / exe 大小=? / Machine=? / 门禁是否生效=?
 【异常】      任何与期望不符的，贴原文，并说明在哪一步
 【结论】      通过项 / 不通过项 / 未能验证项（并说明原因）
 ```
@@ -164,12 +213,13 @@ python build_win.py
 
 | 现象 | 说明 |
 |---|---|
-| 首次运行卡着不动 | 在后台下 ffmpeg（约 50MB），页面顶部有 ⏳ 提示。**只下一次** |
+| 首次运行卡着不动 | 在后台下 ffmpeg（约 **106MB**，不是旧文档写的 50MB），页面顶部有 ⏳ 提示。**只下一次** |
 | B站 下载报 503 / timeout | B站 CDN 短时限流。隔几分钟重试即可，不是代码问题（已实测：绕开本程序单独拉同一条流 7 秒就下完） |
 | YouTube 解析出 0 个格式 | 已知情况，YouTube 近年加强了限制。界面会提示"没找到可下载的视频" |
 | 带无效 cookie 后清晰度变少 | 网站行为（认不出会员就按未登录处理）。见 3.4 |
 | 微信视频号 / 快手不能下 | **确实不支持**，这是预期结果，不是缺陷 |
 | `__pycache__` 目录出现 | Python 自动生成的缓存，正常 |
+| 下载失败后没留下 .video.mp4 / .part | v1.6 起失败会主动清掉中间文件，正常 |
 
 ---
 

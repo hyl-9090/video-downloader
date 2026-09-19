@@ -290,13 +290,19 @@ def ydl_download_mod(url, fmt, cookie, hooks, outtmpl):
 
 def ydl_download_bin(url, fmt, cookie, hooks, outtmpl):
     import re as _re
-    args = [YTDL_BIN, "-f", fmt, "-o", outtmpl, "--noplaylist", "--newline",
+    from collections import deque
+    # 注意: 命令行参数是 --no-playlist。老写法 --noplaylist 在 yt-dlp 2026 里会直接
+    # 判 "no such option" 并以 returncode=2 退出(API 模式的字典键才叫 noplaylist)。
+    args = [YTDL_BIN, "-f", fmt, "-o", outtmpl, "--no-playlist", "--newline",
             "--retries", "10", "--fragment-retries", "10", "--socket-timeout", "30"]
     cf = write_cookie(cookie, url) if cookie else None
     if cf:
         args += ["--cookies", cf]
+    tail = deque(maxlen=12)          # 留住最近几行 stderr, 失败时带出去说明原因
     proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, bufsize=1)
     for line in proc.stderr:
+        if line.strip():
+            tail.append(line.strip())
         m = _re.search(r"\[download\]\s+(\d+(?:\.\d+)?)%", line)
         if m:
             hooks({"status": "downloading", "_percent_str": m.group(1) + "%", "filename": os.path.basename(outtmpl)})
@@ -305,7 +311,9 @@ def ydl_download_bin(url, fmt, cookie, hooks, outtmpl):
         try: os.remove(cf)
         except Exception: pass
     if proc.returncode != 0:
-        raise RuntimeError("yt-dlp 下载失败(returncode=%s)" % proc.returncode)
+        detail = " | ".join(list(tail)[-5:])[:400]
+        raise RuntimeError("yt-dlp 下载失败(returncode=%s)%s"
+                           % (proc.returncode, ("\n" + detail) if detail else ""))
 
 
 def merge_av(vpath, apath, final):
@@ -711,7 +719,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         if not q:
-            self.wfile.write(b"event: error\ndata: no task\n\n")
+            # 必须用「默认 message 事件」发: 前端只监听 onmessage, 写成 `event: error`
+            # 这种具名事件前端收不到 → 界面会一直干等(验收里发现的静默卡死)
+            msg = {"type": "error",
+                   "message": "任务不存在或已结束（可能程序重启过，或这一单已经跑完了）。请重新点一次「开始下载」。"}
+            self.wfile.write(("data: " + json.dumps(msg, ensure_ascii=False) + "\n\n").encode("utf-8"))
+            try:
+                self.wfile.flush()
+            except Exception:
+                pass
             return
         try:
             while True:
@@ -749,6 +765,7 @@ def download_worker(tid, url, fmt, cookie, q, vfmt=None, afmt=None, merge=None, 
                 q.put({"type": "progress", "stage": stage, "percent": "100%", "filename": os.path.basename(d.get("filename", ""))})
         return f
 
+    vpath = apath = final = None      # 失败清理要用, 先占位
     try:
         # 前端没说明「要不要合并」时(如原始格式表直下), 才自己解析一次判断
         if merge is None or not title:
@@ -778,7 +795,7 @@ def download_worker(tid, url, fmt, cookie, q, vfmt=None, afmt=None, merge=None, 
             q.put({"type": "progress", "stage": "合并", "percent": "..."})
             if not is_harmony() and not DEPS.get("ready"):
                 q.put({"type": "progress", "stage": "合并", "percent": "等待组件",
-                       "filename": "首次要下载合并组件(约50MB), 稍等一下…"})
+                       "filename": "首次要下载合并组件(约100MB), 稍等一下…"})
             ok, note = merge_av(vpath, apath, final)
             if ok:
                 try:
@@ -795,6 +812,14 @@ def download_worker(tid, url, fmt, cookie, q, vfmt=None, afmt=None, merge=None, 
             newest = max(cand, key=os.path.getmtime) if cand else base
             q.put({"type": "done", "file": os.path.basename(newest)})
     except Exception as e:
+        # 失败时把中间文件清掉(半截的 .part / .video.mp4 / .audio.m4a 只会白占磁盘)
+        for p in (vpath, apath, (vpath + ".part") if vpath else None,
+                  (apath + ".part") if apath else None):
+            try:
+                if p and os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
         q.put({"type": "error", "message": str(e)[:400]})
 
 
@@ -815,7 +840,17 @@ def _prep_deps():
 
 
 def main():
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    # 被管道/重定向接管时 stdout 是块缓冲, 整场看不到一句日志、会误以为服务没起来
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+    # 支持 `launch.py 8001`; 非数字参数(如 --console)直接忽略 —— 以前 int('--console') 会崩
+    port = 8000
+    for a in sys.argv[1:]:
+        if a.isdigit():
+            port = int(a)
+            break
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     url = "http://127.0.0.1:%d" % port
     print("视频下载器已启动:", url)
